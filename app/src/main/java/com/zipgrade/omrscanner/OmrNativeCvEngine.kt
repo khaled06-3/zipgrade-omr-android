@@ -18,9 +18,9 @@ object OmrNativeCvEngine {
     const val CANONICAL_W = 600
     const val CANONICAL_H = 780
 
-    val DEFAULT_MASTER_KEY: CharArray = charArrayOf('A', 'B', 'B', 'C', 'D', 'D', 'D', 'D', 'C', 'C', 'C', 'B', 'B', 'D', 'D', 'A', 'C', 'B', 'A', 'D', 'A', 'B', 'C', 'D', 'A', 'B', 'C', 'D', 'A', 'B')
-    var questionCountOverride: Int = -1 // -1 = Auto-Detect (10Q, 16Q, 20Q..30Q)
-    var optionsCountOverride: Int = -1 // -1 = Auto-Detect (4 or 5)
+    val DEFAULT_MASTER_KEY: CharArray = charArrayOf('A', 'B', 'B', 'C', 'D', 'D', 'D', 'D', 'C', 'C', 'C', 'B', 'B', 'D', 'D', 'A', 'A', 'B', 'C', 'D', 'A', 'B', 'C', 'D', 'A', 'B', 'C', 'D', 'A', 'B')
+    var questionCountOverride: Int = 16 // -1 = Auto-Detect (10Q, 16Q, 20Q..30Q)
+    var optionsCountOverride: Int = undefined // -1 = Auto-Detect (4 or 5)
 
     data class Point2D(val x: Double, val y: Double)
     data class FiducialSet(

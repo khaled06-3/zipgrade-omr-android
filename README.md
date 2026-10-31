@@ -21,7 +21,7 @@ Every push to `main` automatically triggers the **Build Android OMR Scanner APK*
 
 ## Option 1: Instant Android Install (Progressive Web App — Zero Build Needed)
 
-1. Open **http://localhost:3000?mode=android** in **Google Chrome on your Android phone**.
+1. Open **undefined?mode=android** in **Google Chrome on your Android phone**.
 2. Tap **"Install Android App"** in the top bar (or open Chrome's `⋮` menu and tap **"Add to Home screen / Install app"**).
 3. Launch **OMR Scanner** from your Android home screen in full-screen standalone mode with 100% offline Workbox Service Worker caching.
 

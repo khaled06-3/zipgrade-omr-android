@@ -60,7 +60,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loadScannerApp() {
-        webView.loadUrl("http://localhost:3000?mode=android")
+        webView.loadUrl("undefined?mode=android")
     }
 
     // Allow grading papers one-handed with physical Android Volume buttons

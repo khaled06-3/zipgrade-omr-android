@@ -1,16 +1,39 @@
-# Smart Exam Grader v2.0 (مصحح الاختبارات) — Android APK & Source
+# ZipGrade OMR CV Scanner — Native Android & PWA Repository
 
-Designed for everyday teachers and instructors to grade multiple-choice exam sheets in 1 second.
+This repository contains the **Android Handheld Optical Mark Recognition (OMR) Computer Vision Scanner** (`com.zipgrade.omrscanner`), featuring a 5-stage computer vision pipeline:
 
-## Direct Android APK Download (v2.0.0 Teacher Edition)
+1. **Stage 1 — Integral-Image Local Adaptive Thresholding** (`windowRadius = 28`)
+2. **Stage 2 — Global 6-Fiducial Registration Lock** (`TL, TR, ML, MR, BL, BR`)
+3. **Stage 3 — Split Upper/Lower Dual-Quad Perspective Homography** (`600×780` canonical space)
+4. **Stage 4 — 7-Digit Student ID Column Decoder** (Forms `922412` & `6353B`)
+5. **Stage 5 — Dynamic Question Count (1..30Q, 4 or 5 Options) Circular ROI Integrator**
 
-- **[Download zipgrade-omr-scanner.apk (v2.0.0 Signed APK)](https://github.com/khaled06-3/zipgrade-omr-android/releases/download/v2.0.0/zipgrade-omr-scanner.apk)**
-- Or download directly from the repository root: [`zipgrade-omr-scanner.apk`](./zipgrade-omr-scanner.apk)
+---
 
-### What's New in v2.0.0 (Teacher Edition)
-1. **Simple 3-Tab Teacher Workflow**:
-   - **1. Scan Paper (`تصوير الورقة`)**: Big buttons to scan with your phone camera, pick a photo from WhatsApp/Gallery, or test the bundled 16-Question and 10-Question papers.
-   - **2. Visual Bubble Answer Key (`نموذج الإجابة`)**: Tap circular `(A) (B) (C) (D)` bubble buttons directly on screen—no popup menus! Or scan a solved teacher sheet and tap **"🔑 Use as Answer Key"** to copy all answers in 1 tap.
-   - **3. Saved Class Gradebook (`سجل الدرجات`)**: Save student grades with editable Student Name + auto-read Student ID, view Class Average % and Highest Score %, and tap **"📤 Share Grades (WhatsApp / CSV)"** to send the class report anywhere.
-2. **Clear Score Card & Mistake Filter**:
-   - Shows percentage, fraction (`15 / 16`), bilingual grade badge (`Excellent • ممتاز`), color legend (`Green = Correct`, `Red = Wrong`, `Blue = Correct Answer`, `Orange = Double Mark`), and a **Mistakes Only** toggle.
+## Automated GitHub Actions APK Build (`.github/workflows/android-apk.yml`)
+
+Every push to `main` automatically triggers the **Build Android OMR Scanner APK** GitHub Action:
+- Sets up **JDK 17 (Temurin)**, **Android SDK (API 34)**, and **Gradle 8.7**
+- Runs `gradle assembleDebug --no-daemon`
+- Publishes `zipgrade-omr-scanner-debug-apk` (`app-debug.apk`) directly in the GitHub Actions **Artifacts** tab for instant download to your Android device.
+
+---
+
+## Option 1: Instant Android Install (Progressive Web App — Zero Build Needed)
+
+1. Open **http://localhost:3000?mode=android** in **Google Chrome on your Android phone**.
+2. Tap **"Install Android App"** in the top bar (or open Chrome's `⋮` menu and tap **"Add to Home screen / Install app"**).
+3. Launch **OMR Scanner** from your Android home screen in full-screen standalone mode with 100% offline Workbox Service Worker caching.
+
+---
+
+## Option 2: Compile Locally in Android Studio
+
+1. Clone this repository and open it in **Android Studio (Ladybug / Koala or newer)**.
+2. Let Gradle sync (`compileSdk = 34`, `minSdk = 26`).
+3. Connect your Android phone via USB debugging or build from terminal:
+   ```bash
+   gradle assembleDebug
+   ```
+4. Install the generated APK:
+   `app/build/outputs/apk/debug/app-debug.apk`

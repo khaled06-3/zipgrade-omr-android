@@ -52,7 +52,8 @@ public class MainActivity extends Activity {
     private int activeTab = 0; // 0 = Scan, 1 = Answer Key, 2 = Class List
     private int activeQuestionCount = 16;
     private boolean showMistakesOnly = false;
-    private String currentPresetHint = "16Q";
+    private boolean hasCustomUserKey = false;
+    private String currentPresetHint = "AUTO";
     private String currentStudentName = "الفاتح الصادق (Student 1)";
     private Bitmap currentBitmap = null;
     private OmrNativeCvEngine.GradeOutcome lastOutcome = null;
@@ -380,6 +381,21 @@ public class MainActivity extends Activity {
         HorizontalScrollView qScroll = new HorizontalScrollView(this);
         LinearLayout qRow = new LinearLayout(this);
         qRow.setOrientation(LinearLayout.HORIZONTAL);
+
+        Button autoBtn = createActionBtn("Auto", "#065F46", "#A7F3D0");
+        LinearLayout.LayoutParams autoLp = new LinearLayout.LayoutParams(dp(62), dp(36));
+        autoLp.setMargins(0, 0, dp(6), 0);
+        autoBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                currentPresetHint = "AUTO";
+                hasCustomUserKey = false;
+                runOmrPipeline();
+                Toast.makeText(MainActivity.this, "Auto-detected " + activeQuestionCount + " Questions", Toast.LENGTH_SHORT).show();
+            }
+        });
+        qRow.addView(autoBtn, autoLp);
+
         int[] presets = new int[] {10, 15, 16, 20, 25, 30};
         for (final int qVal : presets) {
             Button qb = createActionBtn(qVal + " Q", "#0F172A", "#E2E8F0");
@@ -670,6 +686,7 @@ public class MainActivity extends Activity {
                     @Override
                     public void onClick(View v) {
                         masterKey[qIndex] = c;
+                        hasCustomUserKey = true;
                         persistState();
                         runOmrPipeline();
                         refreshKeyTabRows();
@@ -870,18 +887,24 @@ public class MainActivity extends Activity {
     private void setMasterKeyPreset16Q() {
         char[] k = new char[] {'A','B','B','C','D','D','D','D','C','C','C','B','B','D','D','A'};
         System.arraycopy(k, 0, masterKey, 0, k.length);
+        hasCustomUserKey = false;
         persistState();
     }
 
     private void setMasterKeyPreset10Q() {
         char[] k = new char[] {'B','D','B','B','C','A','B','D','D','A'};
         System.arraycopy(k, 0, masterKey, 0, k.length);
+        hasCustomUserKey = false;
         persistState();
     }
 
     private void updateQuestionCount(int newCount) {
         activeQuestionCount = newCount;
         currentPresetHint = "CUSTOM";
+        if (!hasCustomUserKey) {
+            if (newCount == 10) setMasterKeyPreset10Q();
+            else if (newCount == 16) setMasterKeyPreset16Q();
+        }
         persistState();
         runOmrPipeline();
         Toast.makeText(this, "Quiz size set to " + newCount + " Questions", Toast.LENGTH_SHORT).show();
@@ -896,6 +919,7 @@ public class MainActivity extends Activity {
                 copied++;
             }
         }
+        hasCustomUserKey = true;
         persistState();
         runOmrPipeline();
         Toast.makeText(this, "✓ Copied " + copied + " answers from this paper into the Answer Key!", Toast.LENGTH_LONG).show();
@@ -965,16 +989,44 @@ public class MainActivity extends Activity {
 
     private void runOmrPipeline() {
         if (currentBitmap == null) return;
-        lastOutcome = OmrNativeCvEngine.gradeSheetBitmap(
+        int qOverride = ("AUTO".equals(currentPresetHint) || "CAMERA".equals(currentPresetHint) || "GALLERY".equals(currentPresetHint))
+            ? 0
+            : activeQuestionCount;
+
+        OmrNativeCvEngine.GradeOutcome initial = OmrNativeCvEngine.gradeSheetBitmap(
             currentBitmap,
-            activeQuestionCount,
+            qOverride,
             masterKey,
             currentPresetHint
         );
 
+        // If user hasn't manually customized the answer key, auto-sync preset key for detected 10Q vs 16Q forms
+        if (!hasCustomUserKey) {
+            if (initial.is10QForm && masterKey[0] != 'B') {
+                setMasterKeyPreset10Q();
+                initial = OmrNativeCvEngine.gradeSheetBitmap(
+                    currentBitmap,
+                    qOverride,
+                    masterKey,
+                    currentPresetHint
+                );
+            } else if (!initial.is10QForm && initial.totalQuestions == 16 && masterKey[0] != 'A') {
+                setMasterKeyPreset16Q();
+                initial = OmrNativeCvEngine.gradeSheetBitmap(
+                    currentBitmap,
+                    qOverride,
+                    masterKey,
+                    currentPresetHint
+                );
+            }
+        }
+
+        lastOutcome = initial;
+        activeQuestionCount = lastOutcome.totalQuestions;
+
         scorePercentText.setText(lastOutcome.scorePercent + "%");
         scoreFractionText.setText("Score: " + lastOutcome.correctCount + " / " + lastOutcome.totalQuestions + " Correct");
-        gradeBadgeText.setText("Grade: " + getGradeWord(lastOutcome.scorePercent));
+        gradeBadgeText.setText("Grade: " + getGradeWord(lastOutcome.scorePercent) + "  •  " + lastOutcome.detectedFormName);
         studentIdText.setText(
             "Student ID: " + lastOutcome.decodedStudentId
             + "   •   Mistakes: " + (lastOutcome.wrongCount + lastOutcome.multipleMarkCount)

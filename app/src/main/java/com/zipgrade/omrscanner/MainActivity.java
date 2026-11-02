@@ -96,7 +96,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
     private final char[] masterKey = new char[] {
         'A','B','B','C','D','D','D','D','C','C','C','B','B','D','D','A',
         'A','B','C','D','A','B','C','D','A','B','C','D','A','B',
-        'A','B','C','D','A','B','C','D','A','B','C','D','A','B','C','D','A','B','C','D'
+        'A','B','C','D','A','B','C','D','A','B','C','D','A','B','C','D','A','B','C','D',
+        'A','B','C','D','A','B','C','D','A','B','C','D','A','B','C','D','A','B','C','D',
+        'A','B','C','D','A','B','C','D','A','B','C','D','A','B','C','D','A','B','C','D',
+        'A','B','C','D','A','B','C','D','A','B'
     };
 
     public static class SavedStudentGrade {
@@ -120,7 +123,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
     private final List<SavedStudentGrade> classList = new ArrayList<>();
     private final List<Button> templateButtons = new ArrayList<>();
     private final String[] templateCodes = new String[] {
-        "AUTO", "TPL_UNIVERSAL_AUTO", "TPL_NO_ID_10Q", "TPL_10Q_ID7", "TPL_16Q_ID7", "TPL_20Q_ID7", "TPL_STD_20Q", "TPL_STD_30Q", "TPL_STD_50Q"
+        "AUTO", "TPL_10Q_ID7", "TPL_16Q_ID7", "TPL_STD_20Q", "TPL_STD_50Q", "TPL_STD_100Q", "TPL_UNIVERSAL_AUTO"
     };
 
     // Top-level Tab Containers
@@ -530,11 +533,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         sourceLabel.setTypeface(Typeface.DEFAULT_BOLD);
         sourceCard.addView(sourceLabel);
 
+        // Streamlined 2-Button Primary Action Row (Fewer Buttons, Cleaner UI)
         LinearLayout primaryRow = new LinearLayout(this);
         primaryRow.setOrientation(LinearLayout.HORIZONTAL);
-        primaryRow.setPadding(0, dp(8), 0, dp(6));
+        primaryRow.setPadding(0, dp(6), 0, dp(6));
 
-        streamToggleBtn = createActionBtn("📹 Live Stream", "#10B981", "#020617");
+        streamToggleBtn = createActionBtn("📹 Live Camera Scan", "#10B981", "#020617");
         streamToggleBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -546,19 +550,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
             }
         });
 
-        Button sysCamBtn = createActionBtn("📷 Take Photo", "#059669", "#FFFFFF");
-        sysCamBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if (isStreamOpen) {
-                    snapshotCurrentStreamFrameKeepStreaming("📸 Snapshot Saved & Graded (Stream still running!)");
-                } else {
-                    launchSystemCameraCapture();
-                }
-            }
-        });
-
-        Button galBtn = createActionBtn("🖼️ Gallery", "#38BDF8", "#020617");
+        Button galBtn = createActionBtn("🖼️ Upload Photo", "#1E293B", "#38BDF8");
         galBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -567,13 +559,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
             }
         });
 
-        primaryRow.addView(streamToggleBtn, new LinearLayout.LayoutParams(0, dp(46), 1.15f));
+        primaryRow.addView(streamToggleBtn, new LinearLayout.LayoutParams(0, dp(46), 1.35f));
         View gap1 = new View(this);
-        primaryRow.addView(gap1, new LinearLayout.LayoutParams(dp(6), dp(1)));
-        primaryRow.addView(sysCamBtn, new LinearLayout.LayoutParams(0, dp(46), 1.0f));
-        View gap1b = new View(this);
-        primaryRow.addView(gap1b, new LinearLayout.LayoutParams(dp(6), dp(1)));
-        primaryRow.addView(galBtn, new LinearLayout.LayoutParams(0, dp(46), 0.9f));
+        primaryRow.addView(gap1, new LinearLayout.LayoutParams(dp(8), dp(1)));
+        primaryRow.addView(galBtn, new LinearLayout.LayoutParams(0, dp(46), 1.0f));
         sourceCard.addView(primaryRow);
 
         // Embedded Continuous Live Camera Stream Card
@@ -605,7 +594,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
             ViewGroup.LayoutParams.MATCH_PARENT, dp(380)));
         liveStreamCard.addView(previewBox);
 
-        // Live Stream Shutter & Mode Controls Row (Never closes stream unless Stop is tapped!)
+        // Clean 2-Button Stream Controls (Snap & Save + Pause/Resume)
         LinearLayout streamControlsRow = new LinearLayout(this);
         streamControlsRow.setOrientation(LinearLayout.HORIZONTAL);
         streamControlsRow.setPadding(0, dp(8), 0, 0);
@@ -631,23 +620,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                 ));
                 pauseStreamBtn.setTextColor(isStreamPaused ? Color.WHITE : Color.parseColor("#38BDF8"));
                 if (isStreamPaused) {
-                    snapshotCurrentStreamFrameKeepStreaming("⏸ Stream Frozen on Current Paper (Tap ▶ Resume to continue)");
+                    snapshotCurrentStreamFrameKeepStreaming("⏸ Stream Frozen on Current Paper");
                 }
                 if (liveArHudView != null) liveArHudView.invalidate();
-            }
-        });
-
-        autoSnapToggleBtn = createActionBtn("⚡ AutoSave: ON", "#065F46", "#A7F3D0");
-        autoSnapToggleBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                autoSnapEnabled = !autoSnapEnabled;
-                autoSnapToggleBtn.setText(autoSnapEnabled ? "⚡ AutoSave: ON" : "⚡ AutoSave: OFF");
-                autoSnapToggleBtn.setBackground(roundedBox(
-                    autoSnapEnabled ? "#065F46" : "#1E293B",
-                    "#10B981",
-                    10
-                ));
             }
         });
 
@@ -659,56 +634,23 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
             }
         });
 
-        streamControlsRow.addView(snapNowBtn, new LinearLayout.LayoutParams(0, dp(42), 1.15f));
+        streamControlsRow.addView(snapNowBtn, new LinearLayout.LayoutParams(0, dp(42), 1.4f));
         View sg1 = new View(this);
-        streamControlsRow.addView(sg1, new LinearLayout.LayoutParams(dp(5), dp(1)));
-        streamControlsRow.addView(pauseStreamBtn, new LinearLayout.LayoutParams(0, dp(42), 0.85f));
-        View sg2 = new View(this);
-        streamControlsRow.addView(sg2, new LinearLayout.LayoutParams(dp(5), dp(1)));
-        streamControlsRow.addView(autoSnapToggleBtn, new LinearLayout.LayoutParams(0, dp(42), 1.05f));
+        streamControlsRow.addView(sg1, new LinearLayout.LayoutParams(dp(6), dp(1)));
+        streamControlsRow.addView(pauseStreamBtn, new LinearLayout.LayoutParams(0, dp(42), 0.9f));
         View sg3 = new View(this);
-        streamControlsRow.addView(sg3, new LinearLayout.LayoutParams(dp(5), dp(1)));
+        streamControlsRow.addView(sg3, new LinearLayout.LayoutParams(dp(6), dp(1)));
         streamControlsRow.addView(torchToggleBtn, new LinearLayout.LayoutParams(0, dp(42), 0.45f));
 
         liveStreamCard.addView(streamControlsRow);
         sourceCard.addView(liveStreamCard, lscLp);
 
-        // Sample Paper Buttons
-        LinearLayout sampleRow = new LinearLayout(this);
-        sampleRow.setOrientation(LinearLayout.HORIZONTAL);
-
-        Button s16Btn = createActionBtn("Try 16-Question Paper", "#0F172A", "#A7F3D0");
-        s16Btn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                setMasterKeyPreset16Q();
-                selectTemplateMode("TPL_16Q_ID7", 16, false);
-                loadAssetSample("sheet_16q.jpg", 16, "16Q", "الفاتح الصادق (Form 6353B)");
-            }
-        });
-
-        Button s10Btn = createActionBtn("Try 10-Question Paper", "#0F172A", "#BAE6FD");
-        s10Btn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                setMasterKeyPreset10Q();
-                selectTemplateMode("TPL_10Q_ID7", 10, false);
-                loadAssetSample("sheet_10q.jpg", 10, "10Q", "الفاتح الصادق (Form 922412)");
-            }
-        });
-
-        sampleRow.addView(s16Btn, new LinearLayout.LayoutParams(0, dp(38), 1f));
-        View gap2 = new View(this);
-        sampleRow.addView(gap2, new LinearLayout.LayoutParams(dp(8), dp(1)));
-        sampleRow.addView(s10Btn, new LinearLayout.LayoutParams(0, dp(38), 1f));
-        sourceCard.addView(sampleRow);
-
-        // Multi-Template Selector Bar (9 Supported Modes including Universal Auto-Grid)
+        // Single Unified Exam Size & Template Row (Supports 1 to 100 Questions in 1 Compact Bar)
         TextView tplTitle = new TextView(this);
-        tplTitle.setText("Sheet Template • نوع نموذج الورقة (Supports Custom & Standard Templates):");
+        tplTitle.setText("Exam Size & Template • عدد الأسئلة (1–100Q):");
         tplTitle.setTextColor(Color.parseColor("#94A3B8"));
         tplTitle.setTextSize(11.5f);
-        tplTitle.setPadding(0, dp(10), 0, dp(4));
+        tplTitle.setPadding(0, dp(6), 0, dp(4));
         sourceCard.addView(tplTitle);
 
         HorizontalScrollView tplScroll = new HorizontalScrollView(this);
@@ -716,17 +658,15 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         tplRow.setOrientation(LinearLayout.HORIZONTAL);
 
         String[] tplLabels = new String[] {
-            "✨ Auto-Detect",
-            "🌐 Any Custom Template (أي نموذج)",
-            "📄 No-ID Sheet (بدون رقم طالب)",
-            "📄 10Q + ID7 (922412)",
-            "📄 16Q + ID7 (6353B)",
-            "📄 20Q + ID7 (13L+7R)",
-            "📋 20Q Standard (2-Col)",
-            "📋 30Q Standard (2-Col)",
-            "📋 50Q Exam (3-Col)"
+            "✨ Auto",
+            "10Q",
+            "16Q",
+            "20Q",
+            "50Q",
+            "100Q",
+            "🌐 Custom Template"
         };
-        final int[] tplDefaultQ = new int[] { 0, 0, 10, 10, 16, 20, 20, 30, 50 };
+        final int[] tplDefaultQ = new int[] { 0, 10, 16, 20, 50, 100, 0 };
 
         templateButtons.clear();
         for (int i = 0; i < templateCodes.length; i++) {
@@ -739,51 +679,23 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
             tb.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
-                    selectTemplateMode(code, defQ, true);
+                    if ("TPL_16Q_ID7".equals(code)) {
+                        setMasterKeyPreset16Q();
+                        selectTemplateMode(code, 16, false);
+                        loadAssetSample("sheet_16q.jpg", 16, "16Q", "الفاتح الصادق (Form 6353B)");
+                    } else if ("TPL_10Q_ID7".equals(code)) {
+                        setMasterKeyPreset10Q();
+                        selectTemplateMode(code, 10, false);
+                        loadAssetSample("sheet_10q.jpg", 10, "10Q", "الفاتح الصادق (Form 922412)");
+                    } else {
+                        selectTemplateMode(code, defQ, true);
+                    }
                 }
             });
             templateButtons.add(tb);
             tplRow.addView(tb, tlp);
         }
-        tplScroll.addView(tplRow);
-        sourceCard.addView(tplScroll);
 
-        // Quiz Question Count Bar
-        TextView qCountTitle = new TextView(this);
-        qCountTitle.setText("Custom Question Count • عدد أسئلة الاختبار:");
-        qCountTitle.setTextColor(Color.parseColor("#94A3B8"));
-        qCountTitle.setTextSize(11.5f);
-        qCountTitle.setPadding(0, dp(8), 0, dp(4));
-        sourceCard.addView(qCountTitle);
-
-        HorizontalScrollView qScroll = new HorizontalScrollView(this);
-        LinearLayout qRow = new LinearLayout(this);
-        qRow.setOrientation(LinearLayout.HORIZONTAL);
-
-        Button autoBtn = createActionBtn("Auto", "#065F46", "#A7F3D0");
-        LinearLayout.LayoutParams autoLp = new LinearLayout.LayoutParams(dp(62), dp(36));
-        autoLp.setMargins(0, 0, dp(6), 0);
-        autoBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                selectTemplateMode("AUTO", 0, true);
-            }
-        });
-        qRow.addView(autoBtn, autoLp);
-
-        int[] presets = new int[] {10, 15, 16, 20, 25, 30, 50};
-        for (final int qVal : presets) {
-            Button qb = createActionBtn(qVal + " Q", "#0F172A", "#E2E8F0");
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(58), dp(36));
-            lp.setMargins(0, 0, dp(6), 0);
-            qb.setOnClickListener(new View.OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    updateQuestionCount(qVal);
-                }
-            });
-            qRow.addView(qb, lp);
-        }
         Button minusBtn = createActionBtn("-1", "#334155", "#FFFFFF");
         minusBtn.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -791,22 +703,22 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                 updateQuestionCount(Math.max(1, activeQuestionCount - 1));
             }
         });
-        qRow.addView(minusBtn, new LinearLayout.LayoutParams(dp(48), dp(36)));
+        tplRow.addView(minusBtn, new LinearLayout.LayoutParams(dp(44), dp(36)));
 
         View spm = new View(this);
-        qRow.addView(spm, new LinearLayout.LayoutParams(dp(6), dp(1)));
+        tplRow.addView(spm, new LinearLayout.LayoutParams(dp(5), dp(1)));
 
         Button plusBtn = createActionBtn("+1", "#334155", "#FFFFFF");
         plusBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                updateQuestionCount(Math.min(50, activeQuestionCount + 1));
+                updateQuestionCount(Math.min(100, activeQuestionCount + 1));
             }
         });
-        qRow.addView(plusBtn, new LinearLayout.LayoutParams(dp(48), dp(36)));
+        tplRow.addView(plusBtn, new LinearLayout.LayoutParams(dp(44), dp(36)));
 
-        qScroll.addView(qRow);
-        sourceCard.addView(qScroll);
+        tplScroll.addView(tplRow);
+        sourceCard.addView(tplScroll);
         content.addView(sourceCard);
 
         // Card B: Celebratory Student Grade Card + Save to Class List
@@ -1573,16 +1485,18 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
     }
 
     private void updateQuestionCount(int newCount) {
-        activeQuestionCount = newCount;
+        activeQuestionCount = Math.max(1, Math.min(100, newCount));
         currentPresetHint = "CUSTOM";
-        selectedTemplateMode = newCount == 50 ? "TPL_STD_50Q" : "CUSTOM";
+        selectedTemplateMode = activeQuestionCount == 100
+            ? "TPL_STD_100Q"
+            : (activeQuestionCount == 50 ? "TPL_STD_50Q" : "CUSTOM");
         if (!hasCustomUserKey) {
-            if (newCount == 10) setMasterKeyPreset10Q();
-            else if (newCount == 16) setMasterKeyPreset16Q();
+            if (activeQuestionCount == 10) setMasterKeyPreset10Q();
+            else if (activeQuestionCount == 16) setMasterKeyPreset16Q();
         }
         persistState();
         runOmrPipeline();
-        Toast.makeText(this, "Quiz size set to " + newCount + " Questions", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, "Quiz size set to " + activeQuestionCount + " Questions", Toast.LENGTH_SHORT).show();
     }
 
     private void copyCurrentPaperToMasterKey() {

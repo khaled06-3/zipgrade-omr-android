@@ -677,10 +677,11 @@ public class OmrNativeCvEngine {
             }
         }
 
-        // Resolve Template Mode & Effective Question Count
+        // Resolve Template Mode & Effective Question Count (Supports 1 to 100 Questions)
         boolean isCustomIdForm = autoIsCustomId;
         boolean has13RowsLeft = autoHas13RowsLeft;
         boolean isThreeColumn50Q = false;
+        boolean isFourColumn100Q = false;
         boolean isUniversalAutoGrid = false;
         boolean forceNoStudentId = false;
         int effectiveQCount;
@@ -688,7 +689,12 @@ public class OmrNativeCvEngine {
         if ("TPL_UNIVERSAL_AUTO".equals(presetHint)) {
             isUniversalAutoGrid = true;
             forceNoStudentId = !autoIsCustomId;
-            effectiveQCount = questionCountOverride > 0 ? Math.max(1, Math.min(50, questionCountOverride)) : (autoIsCustomId ? detectedQCount : 20);
+            effectiveQCount = questionCountOverride > 0 ? Math.max(1, Math.min(100, questionCountOverride)) : (autoIsCustomId ? detectedQCount : 20);
+            if (effectiveQCount > 50) {
+                isFourColumn100Q = true;
+                isUniversalAutoGrid = false;
+                forceNoStudentId = true;
+            }
         } else if ("TPL_10Q_ID7".equals(presetHint) || "10Q".equals(presetHint)) {
             isCustomIdForm = true;
             has13RowsLeft = false;
@@ -705,7 +711,14 @@ public class OmrNativeCvEngine {
             isCustomIdForm = true;
             has13RowsLeft = false;
             forceNoStudentId = true;
-            effectiveQCount = questionCountOverride > 0 ? Math.min(20, questionCountOverride) : 10;
+            effectiveQCount = questionCountOverride > 0 ? Math.min(100, questionCountOverride) : 10;
+            if (effectiveQCount > 50) {
+                isCustomIdForm = false;
+                isFourColumn100Q = true;
+            } else if (effectiveQCount > 30) {
+                isCustomIdForm = false;
+                isThreeColumn50Q = true;
+            }
         } else if ("TPL_STD_20Q".equals(presetHint)) {
             isCustomIdForm = false;
             forceNoStudentId = true;
@@ -719,6 +732,11 @@ public class OmrNativeCvEngine {
             isThreeColumn50Q = true;
             forceNoStudentId = true;
             effectiveQCount = 50;
+        } else if ("TPL_STD_100Q".equals(presetHint)) {
+            isCustomIdForm = false;
+            isFourColumn100Q = true;
+            forceNoStudentId = true;
+            effectiveQCount = 100;
         } else {
             boolean isAutoMode = questionCountOverride <= 0
                 || "AUTO".equals(presetHint)
@@ -727,8 +745,12 @@ public class OmrNativeCvEngine {
             if (isAutoMode) {
                 effectiveQCount = isCustomIdForm ? detectedQCount : 20;
             } else {
-                effectiveQCount = Math.max(1, Math.min(50, questionCountOverride));
-                if (effectiveQCount > 30) {
+                effectiveQCount = Math.max(1, Math.min(100, questionCountOverride));
+                if (effectiveQCount > 50) {
+                    isCustomIdForm = false;
+                    isFourColumn100Q = true;
+                    forceNoStudentId = true;
+                } else if (effectiveQCount > 30) {
                     isCustomIdForm = false;
                     isThreeColumn50Q = true;
                     forceNoStudentId = true;
@@ -859,8 +881,8 @@ public class OmrNativeCvEngine {
 
         int maxLeftColRows = has13RowsLeft || effectiveQCount > 10 ? 13 : 10;
         float bubbleScale = Math.max(0.55f, Math.min(1.15f, scaleX));
-        float drawRadius = (isThreeColumn50Q ? 9.0f : 11.5f) * bubbleScale;
-        float sampleRadius = isThreeColumn50Q ? 7.0f : 8.5f;
+        float drawRadius = (isFourColumn100Q ? 6.8f : (isThreeColumn50Q ? 9.0f : 11.5f)) * bubbleScale;
+        float sampleRadius = isFourColumn100Q ? 5.2f : (isThreeColumn50Q ? 7.0f : 8.5f);
 
         // Universal Any-Template Auto-Calibration: discover [baseX, stepX, baseY, stepY] per column directly from image
         float[] univLeftCol = null;
@@ -887,6 +909,14 @@ public class OmrNativeCvEngine {
                 stepX = colParams[1];
                 baseY = colParams[2];
                 stepY = colParams[3];
+            } else if (isFourColumn100Q) {
+                // 4-Column 100Q Layout: Col 1 (Q1..25), Col 2 (Q26..50), Col 3 (Q51..75), Col 4 (Q76..100)
+                int colIdx = (q - 1) / 25;
+                colRowIdx = (q - 1) % 25;
+                baseX = 94f + colIdx * 106f;
+                stepX = 18f;
+                baseY = 178f;
+                stepY = 18.2f;
             } else if (isThreeColumn50Q) {
                 // 3-Column 50Q Layout: Col 1 (Q1..17), Col 2 (Q18..34), Col 3 (Q35..50)
                 int colIdx = (q - 1) / 17;
@@ -1006,6 +1036,8 @@ public class OmrNativeCvEngine {
         String formName;
         if (isUniversalAutoGrid) {
             formName = "Universal Auto-Grid (" + effectiveQCount + "Q • Custom Template)";
+        } else if (isFourColumn100Q) {
+            formName = "ZipGrade " + effectiveQCount + "Q (4-Column • No-ID)";
         } else if (isThreeColumn50Q) {
             formName = "ZipGrade 50Q (3-Column • No-ID)";
         } else if (!isCustomIdForm) {

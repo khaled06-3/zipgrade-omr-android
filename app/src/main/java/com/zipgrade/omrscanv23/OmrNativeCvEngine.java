@@ -62,6 +62,37 @@ public class OmrNativeCvEngine {
         public boolean locked6;
         public int lockedCount;
         public float confidence;
+        public float ha, hb, hc, hd, he, hf, hg, hh;
+
+        public void computeHomography() {
+            if (tl == null || tr == null || br == null || bl == null) return;
+            float x0 = tl.x, y0 = tl.y;
+            float x1 = tr.x, y1 = tr.y;
+            float x2 = br.x, y2 = br.y;
+            float x3 = bl.x, y3 = bl.y;
+            float dx1 = x1 - x2, dx2 = x3 - x2, sx = x0 - x1 + x2 - x3;
+            float dy1 = y1 - y2, dy2 = y3 - y2, sy = y0 - y1 + y2 - y3;
+            float det = dx1 * dy2 - dx2 * dy1;
+            if (Math.abs(det) < 1e-5f) {
+                hg = 0f;
+                hh = 0f;
+                ha = x1 - x0;
+                hb = x3 - x0;
+                hc = x0;
+                hd = y1 - y0;
+                he = y3 - y0;
+                hf = y0;
+            } else {
+                hg = (sx * dy2 - sy * dx2) / det;
+                hh = (dx1 * sy - dy1 * sx) / det;
+                ha = x1 - x0 + hg * x1;
+                hb = x3 - x0 + hh * x3;
+                hc = x0;
+                hd = y1 - y0 + hg * y1;
+                he = y3 - y0 + hh * y3;
+                hf = y0;
+            }
+        }
     }
 
     private static class VerticalTriplet {
@@ -181,30 +212,64 @@ public class OmrNativeCvEngine {
     }
 
     private static void mapCanonicalToSourceFast(float cx, float cy, DetectedFiducials f, float[] outXY) {
-        boolean isUpper = cy <= CANON_ML_Y;
-        float u, v;
-        Pt qTL, qTR, qBL, qBR;
-        if (isUpper) {
-            u = (cx - CANON_TL_X) * (1f / (CANON_TR_X - CANON_TL_X));
-            v = (cy - CANON_TL_Y) * (1f / (CANON_ML_Y - CANON_TL_Y));
-            qTL = f.tl;
-            qTR = f.tr;
-            qBL = f.ml;
-            qBR = f.mr;
-        } else {
-            u = (cx - CANON_ML_X) * (1f / (CANON_MR_X - CANON_ML_X));
-            v = (cy - CANON_ML_Y) * (1f / (CANON_BL_Y - CANON_ML_Y));
-            qTL = f.ml;
-            qTR = f.mr;
-            qBL = f.bl;
-            qBR = f.br;
+        if (f.lockedCount == 6) {
+            boolean isUpper = cy <= CANON_ML_Y;
+            float u, v;
+            Pt qTL, qTR, qBL, qBR;
+            if (isUpper) {
+                u = (cx - CANON_TL_X) * (1f / (CANON_TR_X - CANON_TL_X));
+                v = (cy - CANON_TL_Y) * (1f / (CANON_ML_Y - CANON_TL_Y));
+                qTL = f.tl;
+                qTR = f.tr;
+                qBL = f.ml;
+                qBR = f.mr;
+            } else {
+                u = (cx - CANON_ML_X) * (1f / (CANON_MR_X - CANON_ML_X));
+                v = (cy - CANON_ML_Y) * (1f / (CANON_BL_Y - CANON_ML_Y));
+                qTL = f.ml;
+                qTR = f.mr;
+                qBL = f.bl;
+                qBR = f.br;
+            }
+            float topX = qTL.x + u * (qTR.x - qTL.x);
+            float topY = qTL.y + u * (qTR.y - qTL.y);
+            float botX = qBL.x + u * (qBR.x - qBL.x);
+            float botY = qBL.y + u * (qBR.y - qBL.y);
+            outXY[0] = topX + v * (botX - topX);
+            outXY[1] = topY + v * (botY - topY);
+            return;
         }
-        float topX = qTL.x + u * (qTR.x - qTL.x);
-        float topY = qTL.y + u * (qTR.y - qTL.y);
-        float botX = qBL.x + u * (qBR.x - qBL.x);
-        float botY = qBL.y + u * (qBR.y - qBL.y);
-        outXY[0] = topX + v * (botX - topX);
-        outXY[1] = topY + v * (botY - topY);
+        float u = (cx - CANON_TL_X) * (1f / (CANON_TR_X - CANON_TL_X));
+        float v = (cy - CANON_TL_Y) * (1f / (CANON_BL_Y - CANON_TL_Y));
+        float z = f.hg * u + f.hh * v + 1f;
+        if (Math.abs(z) < 1e-5f) z = 1f;
+        outXY[0] = (f.ha * u + f.hb * v + f.hc) / z;
+        outXY[1] = (f.hd * u + f.he * v + f.hf) / z;
+    }
+
+    private static float sampleCanonicalFast5Pt(
+        float cx,
+        float cy,
+        float canonRadius,
+        DetectedFiducials f,
+        float scaleX,
+        float scaleY,
+        float[] tmpXY
+    ) {
+        mapCanonicalToSourceFast(cx, cy, f, tmpXY);
+        int scx = Math.max(2, Math.min(CANONICAL_W - 3, Math.round(tmpXY[0])));
+        int scy = Math.max(2, Math.min(CANONICAL_H - 3, Math.round(tmpXY[1])));
+        int rx = Math.max(1, Math.min(6, Math.round(canonRadius * 0.45f * scaleX)));
+        int ry = Math.max(1, Math.min(6, Math.round(canonRadius * 0.45f * scaleY)));
+        int rowC = scy * CANONICAL_W;
+        int rowU = Math.max(0, scy - ry) * CANONICAL_W;
+        int rowD = Math.min(CANONICAL_H - 1, scy + ry) * CANONICAL_W;
+        float sum = sDarkness[rowC + scx] * 2f
+                  + sDarkness[rowC + Math.max(0, scx - rx)]
+                  + sDarkness[rowC + Math.min(CANONICAL_W - 1, scx + rx)]
+                  + sDarkness[rowU + scx]
+                  + sDarkness[rowD + scx];
+        return sum * (1f / 6f);
     }
 
     private static float sampleCanonicalCircleDirect(
@@ -221,7 +286,7 @@ public class OmrNativeCvEngine {
         float scy = tmpXY[1];
         float sum = 0f;
         int count = 0;
-        int rInt = Math.round(canonRadius);
+        int rInt = Math.max(2, Math.round(canonRadius));
         float rSq = canonRadius * canonRadius;
 
         for (int dy = -rInt; dy <= rInt; dy++) {
@@ -237,6 +302,130 @@ public class OmrNativeCvEngine {
             }
         }
         return count > 0 ? (sum / count) : 0f;
+    }
+
+    private static float[] refineColumnGrid(
+        float baseX,
+        float stepX,
+        float baseY,
+        float stepY,
+        int rowCount,
+        float r,
+        DetectedFiducials fid,
+        float scaleX,
+        float scaleY,
+        float[] tmpXY
+    ) {
+        float bestBX = baseX, bestSX = stepX, bestBY = baseY, bestSY = stepY;
+        float bestScore = -1e9f;
+
+        for (float dy = -9f; dy <= 9f; dy += 3f) {
+            for (float dsy = -1.2f; dsy <= 1.2f; dsy += 0.4f) {
+                float cBY = baseY + dy;
+                float cSY = stepY + dsy;
+                for (float dx = -9f; dx <= 9f; dx += 3f) {
+                    float cBX = baseX + dx;
+                    float score = 0f;
+                    for (int row = 0; row < rowCount; row++) {
+                        float ry = cBY + row * cSY;
+                        float maxD = 0f, minD = 1f;
+                        int bestO = 0;
+                        for (int o = 0; o < 4; o++) {
+                            float d = sampleCanonicalFast5Pt(cBX + o * stepX, ry, r, fid, scaleX, scaleY, tmpXY);
+                            if (d > maxD) { maxD = d; bestO = o; }
+                            if (d < minD) minD = d;
+                        }
+                        float vGap = sampleCanonicalFast5Pt(cBX + bestO * stepX, ry + cSY * 0.5f, r * 0.5f, fid, scaleX, scaleY, tmpXY);
+                        score += (maxD - minD) + (maxD - vGap) * 0.85f;
+                    }
+                    score -= (Math.abs(dy) * 0.008f + Math.abs(dx) * 0.008f + Math.abs(dsy) * 0.04f) * rowCount;
+                    if (score > bestScore) {
+                        bestScore = score;
+                        bestBX = cBX;
+                        bestBY = cBY;
+                        bestSY = cSY;
+                    }
+                }
+            }
+        }
+
+        float p1BX = bestBX, p1BY = bestBY, p1SY = bestSY;
+        for (float dy = -2f; dy <= 2f; dy += 1f) {
+            for (float dx = -2f; dx <= 2f; dx += 1f) {
+                for (float dsx = -0.8f; dsx <= 0.8f; dsx += 0.4f) {
+                    float cBX = p1BX + dx, cSX = stepX + dsx, cBY = p1BY + dy;
+                    float score = 0f;
+                    for (int row = 0; row < rowCount; row++) {
+                        float ry = cBY + row * p1SY;
+                        float maxD = 0f, minD = 1f;
+                        int bestO = 0;
+                        for (int o = 0; o < 4; o++) {
+                            float d = sampleCanonicalFast5Pt(cBX + o * cSX, ry, r, fid, scaleX, scaleY, tmpXY);
+                            if (d > maxD) { maxD = d; bestO = o; }
+                            if (d < minD) minD = d;
+                        }
+                        float vGap = sampleCanonicalFast5Pt(cBX + bestO * cSX, ry + p1SY * 0.5f, r * 0.5f, fid, scaleX, scaleY, tmpXY);
+                        score += (maxD - minD) + (maxD - vGap) * 0.85f;
+                    }
+                    if (score > bestScore) {
+                        bestScore = score;
+                        bestBX = cBX;
+                        bestSX = cSX;
+                        bestBY = cBY;
+                    }
+                }
+            }
+        }
+        return new float[] { bestBX, bestSX, bestBY, bestSY };
+    }
+
+    private static float[] refineIdGrid(
+        float idBaseX,
+        float idStepX,
+        float idBaseY,
+        float idStepY,
+        float idR,
+        DetectedFiducials fid,
+        float scaleX,
+        float scaleY,
+        float[] tmpXY
+    ) {
+        float bestBX = idBaseX, bestSX = idStepX, bestBY = idBaseY, bestSY = idStepY;
+        float bestScore = -1e9f;
+
+        for (float dy = -12f; dy <= 12f; dy += 3f) {
+            for (float dsy = -1.2f; dsy <= 1.2f; dsy += 0.4f) {
+                float cBY = idBaseY + dy, cSY = idStepY + dsy;
+                for (float dx = -12f; dx <= 12f; dx += 3f) {
+                    for (float dsx = -1.2f; dsx <= 1.2f; dsx += 0.6f) {
+                        float cBX = idBaseX + dx, cSX = idStepX + dsx;
+                        float score = 0f;
+                        for (int c = 0; c < 7; c++) {
+                            float cx = cBX + c * cSX;
+                            float maxD = 0f, sumD = 0f;
+                            int bestDig = 0;
+                            for (int dig = 0; dig <= 9; dig++) {
+                                float d = sampleCanonicalFast5Pt(cx, cBY + dig * cSY, idR, fid, scaleX, scaleY, tmpXY);
+                                if (d > maxD) { maxD = d; bestDig = dig; }
+                                sumD += d;
+                            }
+                            float avgOther = (sumD - maxD) * (1f / 9f);
+                            float vGap = sampleCanonicalFast5Pt(cx, cBY + (bestDig + 0.5f) * cSY, idR * 0.5f, fid, scaleX, scaleY, tmpXY);
+                            score += (maxD - avgOther) + (maxD - vGap) * 0.75f;
+                        }
+                        score -= (Math.abs(dy) * 0.006f + Math.abs(dx) * 0.006f) * 7f;
+                        if (score > bestScore) {
+                            bestScore = score;
+                            bestBX = cBX;
+                            bestSX = cSX;
+                            bestBY = cBY;
+                            bestSY = cSY;
+                        }
+                    }
+                }
+            }
+        }
+        return new float[] { bestBX, bestSX, bestBY, bestSY };
     }
 
     private static void computeAdaptiveDarknessFromLuma() {
@@ -339,7 +528,7 @@ public class OmrNativeCvEngine {
                     if (area >= 45 && area <= 900 && bw >= 6 && bw <= 40 && bh >= 6 && bh <= 40) {
                         float fillRatio = (float) area / (float) (bw * bh);
                         float aspect = (float) bw / (float) bh;
-                        if (fillRatio >= 0.80f && aspect >= 0.42f && aspect <= 2.40f && sqBlobs.size() < 28) {
+                        if (fillRatio >= 0.80f && aspect >= 0.42f && aspect <= 2.40f) {
                             sqBlobs.add(new Pt((float) sumX / area, (float) sumY / area, fillRatio));
                         }
                     }
@@ -396,21 +585,11 @@ public class OmrNativeCvEngine {
             }
         }
 
-        if (bestL != null && bestR != null) {
-            det.tl = bestL.top;
-            det.ml = bestL.mid;
-            det.bl = bestL.bot;
-            det.tr = bestR.top;
-            det.mr = bestR.mid;
-            det.br = bestR.bot;
-            det.locked6 = true;
-            det.lockedCount = 6;
-            det.confidence = (bestL.top.fill + bestL.mid.fill + bestL.bot.fill
-                            + bestR.top.fill + bestR.mid.fill + bestR.bot.fill) / 6f;
-            return det;
-        }
+        float tripletArea = (bestL != null && bestR != null)
+            ? (bestR.avgX - bestL.avgX) * (((bestL.bot.y - bestL.top.y) + (bestR.bot.y - bestR.top.y)) * 0.5f)
+            : 0f;
 
-        // 4-Corner Fiducial Fallback: For test papers that only have 4 corner squares (TL, TR, BL, BR) and no middle squares (ML, MR)
+        // 4-Corner Fiducial Detector (with perspective trapezoid support)
         Pt bestTL = null, bestBL = null, bestTR = null, bestBR = null;
         float bestCornerScore = -999999f;
         for (int i = 0; i < n; i++) {
@@ -418,21 +597,25 @@ public class OmrNativeCvEngine {
             for (int j = 0; j < n; j++) {
                 if (i == j) continue;
                 Pt bl = sqBlobs.get(j);
-                if (bl.y - tl.y < 340f || Math.abs(bl.x - tl.x) > 40f) continue;
+                if (bl.y - tl.y < 300f || Math.abs(bl.x - tl.x) > 55f) continue;
                 for (int u = 0; u < n; u++) {
                     if (u == i || u == j) continue;
                     Pt tr = sqBlobs.get(u);
-                    if (tr.x - tl.x < 160f || Math.abs(tr.y - tl.y) > 42f) continue;
+                    if (tr.x - tl.x < 160f || Math.abs(tr.y - tl.y) > 48f) continue;
                     if (!(tl.y > 120f || tr.x < 480f || tl.x < 52f || tr.x > 548f || tl.y < 54f)) continue;
                     for (int v = 0; v < n; v++) {
                         if (v == i || v == j || v == u) continue;
                         Pt br = sqBlobs.get(v);
-                        if (Math.abs(br.x - tr.x) > 40f || Math.abs(br.y - bl.y) > 42f) continue;
-                        float spanX = ((tr.x - tl.x) + (br.x - bl.x)) * 0.5f;
+                        if (Math.abs(br.x - tr.x) > 55f || Math.abs(br.y - bl.y) > 48f) continue;
+                        float topW = tr.x - tl.x;
+                        float botW = br.x - bl.x;
+                        if (botW < 150f || Math.abs(topW - botW) > 95f) continue;
+                        float spanX = (topW + botW) * 0.5f;
                         float spanY = ((bl.y - tl.y) + (br.y - tr.y)) * 0.5f;
-                        float skewPenalty = Math.abs(tl.y - tr.y) * 5f + Math.abs(bl.y - br.y) * 5f
-                                          + Math.abs(tl.x - bl.x) * 5f + Math.abs(tr.x - br.x) * 5f;
-                        float cScore = spanX + spanY * 0.6f - skewPenalty;
+                        float topBottomTiltDiff = Math.abs((tr.y - tl.y) - (br.y - bl.y));
+                        float leftRightHeightDiff = Math.abs((bl.y - tl.y) - (br.y - tr.y));
+                        float fillBonus = (tl.fill + tr.fill + bl.fill + br.fill) * 25f;
+                        float cScore = spanX + spanY * 0.65f + fillBonus - topBottomTiltDiff * 5f - leftRightHeightDiff * 4f;
                         if (cScore > bestCornerScore) {
                             bestCornerScore = cScore;
                             bestTL = tl;
@@ -445,16 +628,69 @@ public class OmrNativeCvEngine {
             }
         }
 
+        float cornerArea = (bestTL != null && bestTR != null && bestBL != null && bestBR != null)
+            ? (((bestTR.x - bestTL.x) + (bestBR.x - bestBL.x)) * 0.5f) * (((bestBL.y - bestTL.y) + (bestBR.y - bestTR.y)) * 0.5f)
+            : 0f;
+
+        if (bestL != null && bestR != null && tripletArea >= cornerArea * 0.90f && (bestL.bot.y - bestL.top.y) >= 240f && (bestR.avgX - bestL.avgX) >= 200f) {
+            det.tl = bestL.top;
+            det.ml = bestL.mid;
+            det.bl = bestL.bot;
+            det.tr = bestR.top;
+            det.mr = bestR.mid;
+            det.br = bestR.bot;
+            det.locked6 = true;
+            det.lockedCount = 6;
+            det.confidence = (bestL.top.fill + bestL.mid.fill + bestL.bot.fill
+                            + bestR.top.fill + bestR.mid.fill + bestR.bot.fill) / 6f;
+            det.computeHomography();
+            return det;
+        }
+
         if (bestTL != null && bestTR != null && bestBL != null && bestBR != null) {
             det.tl = bestTL;
             det.tr = bestTR;
             det.bl = bestBL;
             det.br = bestBR;
-            det.ml = new Pt((bestTL.x + bestBL.x) * 0.5f, (bestTL.y + bestBL.y) * 0.5f, (bestTL.fill + bestBL.fill) * 0.5f);
-            det.mr = new Pt((bestTR.x + bestBR.x) * 0.5f, (bestTR.y + bestBR.y) * 0.5f, (bestTR.fill + bestBR.fill) * 0.5f);
             det.locked6 = true;
             det.lockedCount = 4;
             det.confidence = (bestTL.fill + bestTR.fill + bestBL.fill + bestBR.fill) / 4f;
+            det.computeHomography();
+
+            float[] mxy = new float[2];
+            mapCanonicalToSourceFast(CANON_ML_X, CANON_ML_Y, det, mxy);
+            Pt snapML = new Pt(mxy[0], mxy[1], (bestTL.fill + bestBL.fill) * 0.5f);
+            float bestMlDist = 999f;
+            float expMlX = (bestTL.x + bestBL.x) * 0.5f;
+            float expMlY = (bestTL.y + bestBL.y) * 0.5f;
+            for (Pt b : sqBlobs) {
+                if (b == bestTL || b == bestBL || b == bestTR || b == bestBR) continue;
+                if (Math.abs(b.x - expMlX) < 28f && b.y > bestTL.y + 65f && b.y < bestBL.y - 65f) {
+                    float d = Math.abs(b.x - expMlX) + Math.abs(b.y - expMlY) * 0.25f;
+                    if (d < bestMlDist) {
+                        bestMlDist = d;
+                        snapML = b;
+                    }
+                }
+            }
+            det.ml = snapML;
+
+            mapCanonicalToSourceFast(CANON_MR_X, CANON_MR_Y, det, mxy);
+            Pt snapMR = new Pt(mxy[0], mxy[1], (bestTR.fill + bestBR.fill) * 0.5f);
+            float bestMrDist = 999f;
+            float expMrX = (bestTR.x + bestBR.x) * 0.5f;
+            float expMrY = (bestTR.y + bestBR.y) * 0.5f;
+            for (Pt b : sqBlobs) {
+                if (b == bestTL || b == bestBL || b == bestTR || b == bestBR || b == snapML) continue;
+                if (Math.abs(b.x - expMrX) < 28f && b.y > bestTR.y + 65f && b.y < bestBR.y - 65f) {
+                    float d = Math.abs(b.x - expMrX) + Math.abs(b.y - expMrY) * 0.25f;
+                    if (d < bestMrDist) {
+                        bestMrDist = d;
+                        snapMR = b;
+                    }
+                }
+            }
+            det.mr = snapMR;
             return det;
         }
 
@@ -467,6 +703,7 @@ public class OmrNativeCvEngine {
         det.locked6 = false;
         det.lockedCount = 0;
         det.confidence = 0.65f;
+        det.computeHomography();
         return det;
     }
 
@@ -886,36 +1123,63 @@ public class OmrNativeCvEngine {
             ? Math.min(bestTemplate.qCount, Math.max(1, questionCountOverride))
             : bestTemplate.qCount;
 
-        // Decode 7-Digit Student ID Grid via Direct Inverse Bilinear Sampling
+        // Decode 7-Digit Student ID Grid via 2D Auto-Refined Grid + Peak-Snapped Projective Sampling
+        float[] idCal = refineIdGrid(
+            bestTemplate.idBaseX,
+            bestTemplate.idStepX,
+            bestTemplate.idBaseY,
+            bestTemplate.idStepY,
+            bestTemplate.idR,
+            fid,
+            scaleX,
+            scaleY,
+            tmpXY
+        );
         StringBuilder sidBuilder = new StringBuilder(7);
         float[] idSrcX = new float[7];
         float[] idSrcY = new float[7];
         int idValidCount = 0;
 
+        float idStepOff = Math.max(1.0f, bestTemplate.idR * 0.22f);
+        float[][] idPkOffsets = {
+            {0f, 0f}, {-idStepOff, 0f}, {idStepOff, 0f}, {0f, -idStepOff}, {0f, idStepOff}
+        };
+
         for (int col = 0; col < 7; col++) {
-            float cx = bestTemplate.idBaseX + col * bestTemplate.idStepX;
+            float cx = idCal[0] + col * idCal[1];
             int bestDig = 0;
             float bestDensity = -1f;
             float secondDensity = -1f;
-            float bestCy = bestTemplate.idBaseY;
+            float bestCx = cx;
+            float bestCy = idCal[2];
 
             for (int dig = 0; dig <= 9; dig++) {
-                float cy = bestTemplate.idBaseY + dig * bestTemplate.idStepY;
-                float d = sampleCanonicalCircleDirect(cx, cy, bestTemplate.idR, fid, scaleX, scaleY, tmpXY);
-                if (d > bestDensity) {
+                float cy = idCal[2] + dig * idCal[3];
+                float pkD = -1f;
+                float pkCx = cx, pkCy = cy;
+                for (float[] off : idPkOffsets) {
+                    float d = sampleCanonicalCircleDirect(cx + off[0], cy + off[1], bestTemplate.idR * 0.85f, fid, scaleX, scaleY, tmpXY);
+                    if (d > pkD) {
+                        pkD = d;
+                        pkCx = cx + off[0];
+                        pkCy = cy + off[1];
+                    }
+                }
+                if (pkD > bestDensity) {
                     secondDensity = bestDensity;
-                    bestDensity = d;
+                    bestDensity = pkD;
                     bestDig = dig;
-                    bestCy = cy;
-                } else if (d > secondDensity) {
-                    secondDensity = d;
+                    bestCx = pkCx;
+                    bestCy = pkCy;
+                } else if (pkD > secondDensity) {
+                    secondDensity = pkD;
                 }
             }
-            boolean validDigit = bestDensity >= 0.35f || (bestDensity >= 0.24f && (bestDensity - secondDensity) >= 0.08f);
+            boolean validDigit = bestDensity >= 0.30f || (bestDensity >= 0.18f && (bestDensity - secondDensity) >= 0.07f);
             sidBuilder.append(validDigit ? (char) ('0' + bestDig) : '?');
 
             if (validDigit) {
-                mapCanonicalToSourceFast(cx, bestCy, fid, tmpXY);
+                mapCanonicalToSourceFast(bestCx, bestCy, fid, tmpXY);
                 idSrcX[idValidCount] = tmpXY[0];
                 idSrcY[idValidCount] = tmpXY[1];
                 idValidCount++;
@@ -934,7 +1198,7 @@ public class OmrNativeCvEngine {
             sidBuilder.append("NO-ID");
         }
 
-        // Stage 5: Sample Question Bubbles across all columns of bestTemplate
+        // Stage 5: Sample Question Bubbles across all columns of bestTemplate with Per-Column 2D Auto-Alignment + Peak Snap
         char[] opts = new char[] { 'A', 'B', 'C', 'D' };
         List<QuestionResult> results = new ArrayList<>(effectiveQCount);
         StringBuilder sigBuilder = new StringBuilder(effectiveQCount * 2);
@@ -946,11 +1210,29 @@ public class OmrNativeCvEngine {
         float bubbleScale = Math.max(0.55f, Math.min(1.15f, scaleX));
 
         for (ColSpec col : bestTemplate.cols) {
+            int colRowCount = col.endQ - col.startQ + 1;
+            float[] cCal = refineColumnGrid(
+                col.baseX,
+                col.stepX,
+                col.baseY,
+                col.stepY,
+                colRowCount,
+                col.r,
+                fid,
+                scaleX,
+                scaleY,
+                tmpXY
+            );
             float drawRadius = (col.r + 2.5f) * bubbleScale;
+            float pkStep = Math.max(1.2f, col.r * 0.24f);
+            float[][] qPkOffsets = {
+                {0f, 0f}, {-pkStep, 0f}, {pkStep, 0f}, {0f, -pkStep}, {0f, pkStep}
+            };
+
             for (int q = col.startQ; q <= col.endQ; q++) {
                 if (q > effectiveQCount) break;
                 int colRowIdx = q - col.startQ;
-                float cy = col.baseY + colRowIdx * col.stepY;
+                float cy = cCal[2] + colRowIdx * cCal[3];
 
                 float[] dVals = new float[4];
                 float[] optSrcX = new float[4];
@@ -961,29 +1243,39 @@ public class OmrNativeCvEngine {
                 int bestIdx = 0;
 
                 for (int o = 0; o < 4; o++) {
-                    float cx = col.baseX + o * col.stepX;
-                    float d = sampleCanonicalCircleDirect(cx, cy, col.r, fid, scaleX, scaleY, tmpXY);
+                    float cx = cCal[0] + o * cCal[1];
+                    float pkD = -1f;
+                    float bestCx = cx, bestCy = cy;
+                    for (float[] off : qPkOffsets) {
+                        float d = sampleCanonicalCircleDirect(cx + off[0], cy + off[1], col.r * 0.84f, fid, scaleX, scaleY, tmpXY);
+                        if (d > pkD) {
+                            pkD = d;
+                            bestCx = cx + off[0];
+                            bestCy = cy + off[1];
+                        }
+                    }
+                    mapCanonicalToSourceFast(bestCx, bestCy, fid, tmpXY);
                     optSrcX[o] = tmpXY[0];
                     optSrcY[o] = tmpXY[1];
-                    dVals[o] = d;
-                    if (d < minD) minD = d;
-                    if (d > maxD) {
+                    dVals[o] = pkD;
+                    if (pkD < minD) minD = pkD;
+                    if (pkD > maxD) {
                         secondMaxD = maxD;
-                        maxD = d;
+                        maxD = pkD;
                         bestIdx = o;
-                    } else if (d > secondMaxD) {
-                        secondMaxD = d;
+                    } else if (pkD > secondMaxD) {
+                        secondMaxD = pkD;
                     }
                 }
 
                 StringBuilder markedBuilder = new StringBuilder(3);
                 for (int o = 0; o < 4; o++) {
-                    if (dVals[o] >= 0.36f && (dVals[o] - minD) >= 0.16f && dVals[o] >= maxD * 0.58f) {
+                    if (dVals[o] >= 0.34f && (dVals[o] - minD) >= 0.14f && dVals[o] >= maxD * 0.58f) {
                         if (markedBuilder.length() > 0) markedBuilder.append("+");
                         markedBuilder.append(opts[o]);
                     }
                 }
-                if (markedBuilder.length() == 0 && maxD >= 0.24f && (maxD - secondMaxD) >= 0.12f && maxD >= minD * 2.0f) {
+                if (markedBuilder.length() == 0 && maxD >= 0.18f && (maxD - secondMaxD) >= 0.08f && maxD >= minD * 2.0f) {
                     markedBuilder.append(opts[bestIdx]);
                 }
 

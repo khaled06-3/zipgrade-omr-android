@@ -339,7 +339,7 @@ public class OmrNativeCvEngine {
                     if (area >= 45 && area <= 900 && bw >= 6 && bw <= 40 && bh >= 6 && bh <= 40) {
                         float fillRatio = (float) area / (float) (bw * bh);
                         float aspect = (float) bw / (float) bh;
-                        if (fillRatio >= 0.80f && aspect >= 0.42f && aspect <= 2.40f) {
+                        if (fillRatio >= 0.80f && aspect >= 0.42f && aspect <= 2.40f && sqBlobs.size() < 28) {
                             sqBlobs.add(new Pt((float) sumX / area, (float) sumY / area, fillRatio));
                         }
                     }
@@ -423,6 +423,7 @@ public class OmrNativeCvEngine {
                     if (u == i || u == j) continue;
                     Pt tr = sqBlobs.get(u);
                     if (tr.x - tl.x < 160f || Math.abs(tr.y - tl.y) > 42f) continue;
+                    if (!(tl.y > 120f || tr.x < 480f || tl.x < 52f || tr.x > 548f || tl.y < 54f)) continue;
                     for (int v = 0; v < n; v++) {
                         if (v == i || v == j || v == u) continue;
                         Pt br = sqBlobs.get(v);
@@ -528,6 +529,10 @@ public class OmrNativeCvEngine {
 
     public static Bitmap nv21ToPortraitBitmap(byte[] nv21, int srcW, int srcH, boolean rotate90Clockwise) {
         int[] argb = new int[CANONICAL_W * CANONICAL_H];
+        int maxIdx = nv21 != null ? nv21.length - 1 : -1;
+        if (maxIdx < 0 || srcW <= 0 || srcH <= 0) {
+            return Bitmap.createBitmap(CANONICAL_W, CANONICAL_H, Bitmap.Config.ARGB_8888);
+        }
         for (int y = 0; y < CANONICAL_H; y++) {
             int rowOff = y * CANONICAL_W;
             for (int x = 0; x < CANONICAL_W; x++) {
@@ -541,7 +546,8 @@ public class OmrNativeCvEngine {
                 }
                 sx = Math.max(0, Math.min(srcW - 1, sx));
                 sy = Math.max(0, Math.min(srcH - 1, sy));
-                int lum = nv21[sy * srcW + sx] & 0xFF;
+                int idx = Math.min(maxIdx, Math.max(0, sy * srcW + sx));
+                int lum = nv21[idx] & 0xFF;
                 argb[rowOff + x] = 0xFF000000 | (lum << 16) | (lum << 8) | lum;
             }
         }
@@ -558,21 +564,25 @@ public class OmrNativeCvEngine {
         String templateMode
     ) {
         long t0 = System.currentTimeMillis();
+        int maxIdx = nv21 != null ? nv21.length - 1 : -1;
         synchronized (ARENA_LOCK) {
-            for (int y = 0; y < CANONICAL_H; y++) {
-                int rowOff = y * CANONICAL_W;
-                for (int x = 0; x < CANONICAL_W; x++) {
-                    int sx, sy;
-                    if (rotate90Clockwise) {
-                        sx = (y * srcW) / CANONICAL_H;
-                        sy = srcH - 1 - ((x * srcH) / CANONICAL_W);
-                    } else {
-                        sx = (x * srcW) / CANONICAL_W;
-                        sy = (y * srcH) / CANONICAL_H;
+            if (maxIdx >= 0 && srcW > 0 && srcH > 0) {
+                for (int y = 0; y < CANONICAL_H; y++) {
+                    int rowOff = y * CANONICAL_W;
+                    for (int x = 0; x < CANONICAL_W; x++) {
+                        int sx, sy;
+                        if (rotate90Clockwise) {
+                            sx = (y * srcW) / CANONICAL_H;
+                            sy = srcH - 1 - ((x * srcH) / CANONICAL_W);
+                        } else {
+                            sx = (x * srcW) / CANONICAL_W;
+                            sy = (y * srcH) / CANONICAL_H;
+                        }
+                        sx = Math.max(0, Math.min(srcW - 1, sx));
+                        sy = Math.max(0, Math.min(srcH - 1, sy));
+                        int idx = Math.min(maxIdx, Math.max(0, sy * srcW + sx));
+                        sLuma[rowOff + x] = nv21[idx] & 0xFF;
                     }
-                    sx = Math.max(0, Math.min(srcW - 1, sx));
-                    sy = Math.max(0, Math.min(srcH - 1, sy));
-                    sLuma[rowOff + x] = nv21[sy * srcW + sx] & 0xFF;
                 }
             }
             return executeCorePipelineLocked(null, questionCountOverride, masterKey, templateMode != null ? templateMode : "AUTO", t0);
@@ -597,11 +607,23 @@ public class OmrNativeCvEngine {
         String presetHint
     ) {
         long t0 = System.currentTimeMillis();
-        Bitmap scaled = Bitmap.createScaledBitmap(sourceBitmap, CANONICAL_W, CANONICAL_H, true);
+        Bitmap safeSource = sourceBitmap;
+        if (safeSource == null || safeSource.isRecycled()) {
+            safeSource = Bitmap.createBitmap(CANONICAL_W, CANONICAL_H, Bitmap.Config.ARGB_8888);
+        } else if (safeSource.getConfig() != Bitmap.Config.ARGB_8888) {
+            Bitmap converted = safeSource.copy(Bitmap.Config.ARGB_8888, false);
+            if (converted != null) {
+                safeSource = converted;
+            }
+        }
+        Bitmap scaled = Bitmap.createScaledBitmap(safeSource, CANONICAL_W, CANONICAL_H, true);
         Bitmap annotated = scaled.copy(Bitmap.Config.ARGB_8888, true);
+        if (annotated == null) {
+            annotated = Bitmap.createBitmap(CANONICAL_W, CANONICAL_H, Bitmap.Config.ARGB_8888);
+        }
 
         synchronized (ARENA_LOCK) {
-            scaled.getPixels(sPixels, 0, CANONICAL_W, 0, 0, CANONICAL_W, CANONICAL_H);
+            annotated.getPixels(sPixels, 0, CANONICAL_W, 0, 0, CANONICAL_W, CANONICAL_H);
             for (int i = 0; i < CANONICAL_W * CANONICAL_H; i++) {
                 int c = sPixels[i];
                 sLuma[i] = (((c >> 16) & 0xFF) * 77 + ((c >> 8) & 0xFF) * 150 + (c & 0xFF) * 29) >> 8;

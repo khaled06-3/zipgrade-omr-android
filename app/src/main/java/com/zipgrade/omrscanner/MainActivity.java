@@ -324,9 +324,17 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        loadSavedState();
+        try {
+            loadSavedState();
+        } catch (Throwable ignored) {}
         buildTeacherUi();
-        loadAssetSample("sheet_16q.jpg", 16, "16Q", "الفاتح الصادق (Form 6353B)");
+        try {
+            loadAssetSample("sheetx_16q.jpg", 16, "SHEETX_16Q", "الفاتح الصادق (Sheet-X 16Q)");
+        } catch (Throwable t) {
+            try {
+                loadAssetSample("sheet_16q.jpg", 16, "16Q", "الفاتح الصادق (Form 6353B)");
+            } catch (Throwable ignored) {}
+        }
     }
 
     @Override
@@ -354,8 +362,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         SharedPreferences sp = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         activeQuestionCount = sp.getInt("q_count", 16);
         String savedKey = sp.getString("master_key_50", null);
-        if (savedKey != null && savedKey.length() <= masterKey.length) {
-            for (int i = 0; i < savedKey.length(); i++) {
+        if (savedKey != null) {
+            int len = Math.min(savedKey.length(), masterKey.length);
+            for (int i = 0; i < len; i++) {
                 masterKey[i] = savedKey.charAt(i);
             }
         }
@@ -970,41 +979,48 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                 return;
             }
             liveCamera.setDisplayOrientation(90);
-            Camera.Parameters params = liveCamera.getParameters();
-            List<String> focusModes = params.getSupportedFocusModes();
-            if (focusModes != null) {
-                if (focusModes.contains(Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE)) {
-                    params.setFocusMode(Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE);
-                } else if (focusModes.contains(Camera.Parameters.FOCUS_MODE_AUTO)) {
-                    params.setFocusMode(Camera.Parameters.FOCUS_MODE_AUTO);
-                }
-            }
-            Camera.Size bestSize = null;
-            List<Camera.Size> sizes = params.getSupportedPreviewSizes();
-            if (sizes != null) {
-                int bestDiff = Integer.MAX_VALUE;
-                for (Camera.Size s : sizes) {
-                    int diff = Math.abs(s.width - 1280) + Math.abs(s.height - 720);
-                    if (diff < bestDiff) {
-                        bestDiff = diff;
-                        bestSize = s;
+            try {
+                Camera.Parameters params = liveCamera.getParameters();
+                List<String> focusModes = params.getSupportedFocusModes();
+                if (focusModes != null) {
+                    if (focusModes.contains(Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE)) {
+                        params.setFocusMode(Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE);
+                    } else if (focusModes.contains(Camera.Parameters.FOCUS_MODE_AUTO)) {
+                        params.setFocusMode(Camera.Parameters.FOCUS_MODE_AUTO);
                     }
                 }
+                liveCamera.setParameters(params);
+            } catch (Throwable ignored) {}
+
+            try {
+                Camera.Parameters params = liveCamera.getParameters();
+                Camera.Size bestSize = null;
+                List<Camera.Size> sizes = params.getSupportedPreviewSizes();
+                if (sizes != null) {
+                    int bestDiff = Integer.MAX_VALUE;
+                    for (Camera.Size s : sizes) {
+                        int diff = Math.abs(s.width - 1280) + Math.abs(s.height - 720);
+                        if (diff < bestDiff) {
+                            bestDiff = diff;
+                            bestSize = s;
+                        }
+                    }
+                }
+                if (bestSize != null) {
+                    params.setPreviewSize(bestSize.width, bestSize.height);
+                    liveCamera.setParameters(params);
+                }
+            } catch (Throwable ignored) {}
+
+            Camera.Size actual = liveCamera.getParameters().getPreviewSize();
+            if (actual != null) {
+                previewW = actual.width;
+                previewH = actual.height;
             }
-            if (bestSize != null) {
-                params.setPreviewSize(bestSize.width, bestSize.height);
-                previewW = bestSize.width;
-                previewH = bestSize.height;
-            } else {
-                Camera.Size def = params.getPreviewSize();
-                previewW = def.width;
-                previewH = def.height;
-            }
-            liveCamera.setParameters(params);
             liveCamera.setPreviewDisplay(holder);
             liveCamera.setPreviewCallback(this);
             liveCamera.startPreview();
-        } catch (Exception e) {
+        } catch (Throwable e) {
             Toast.makeText(this, "Camera stream error: " + e.getMessage(), Toast.LENGTH_LONG).show();
             stopLiveCameraStream();
         }
@@ -1729,9 +1745,25 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                 }
             } else if (requestCode == REQ_PICK_IMAGE && data.getData() != null) {
                 Uri uri = data.getData();
-                InputStream is = getContentResolver().openInputStream(uri);
-                Bitmap bmp = BitmapFactory.decodeStream(is);
-                if (is != null) is.close();
+                BitmapFactory.Options boundsOpts = new BitmapFactory.Options();
+                boundsOpts.inJustDecodeBounds = true;
+                InputStream is1 = getContentResolver().openInputStream(uri);
+                BitmapFactory.decodeStream(is1, null, boundsOpts);
+                if (is1 != null) is1.close();
+
+                int sampleSize = 1;
+                int maxDim = Math.max(boundsOpts.outWidth, boundsOpts.outHeight);
+                while (maxDim / sampleSize > 1600) {
+                    sampleSize *= 2;
+                }
+
+                BitmapFactory.Options decodeOpts = new BitmapFactory.Options();
+                decodeOpts.inSampleSize = sampleSize;
+                decodeOpts.inPreferredConfig = Bitmap.Config.ARGB_8888;
+                InputStream is2 = getContentResolver().openInputStream(uri);
+                Bitmap bmp = BitmapFactory.decodeStream(is2, null, decodeOpts);
+                if (is2 != null) is2.close();
+
                 if (bmp != null) {
                     currentBitmap = bmp;
                     currentPresetHint = "GALLERY";
@@ -1739,7 +1771,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                     runOmrPipeline();
                 }
             }
-        } catch (Exception e) {
+        } catch (Throwable e) {
             Toast.makeText(this, "Failed to process image: " + e.getMessage(), Toast.LENGTH_LONG).show();
         }
     }
